@@ -10,12 +10,16 @@ import {
   Info,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Radio,
   MapPin,
   Heart,
   Map as MapIcon,
   Layers,
-  List
+  List,
+  DollarSign,
+  MessageCircle
 } from 'lucide-react';
 import Globe from 'react-globe.gl';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
@@ -37,6 +41,7 @@ const App: React.FC = () => {
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [activeTab, setActiveTab] = useState<'search' | 'countries'>('search');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
@@ -44,6 +49,12 @@ const App: React.FC = () => {
   const mapRef = useRef<L.Map | null>(null);
   const [centerCoords, setCenterCoords] = useState<{ lat: number, lng: number } | null>(null);
   const [isManualSelection, setIsManualSelection] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -224,6 +235,10 @@ const App: React.FC = () => {
     }
   }, [centerCoords, viewMode, stations, selectedStation?.stationuuid, isManualSelection]);
 
+  const handleDonate = () => {
+    window.open('https://wa.me/212668090285', '_blank');
+  };
+
   return (
     <div className="relative w-full h-screen bg-[#000022] overflow-hidden">
       <audio 
@@ -241,7 +256,7 @@ const App: React.FC = () => {
             globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
             bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
             backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-            pointsData={filteredStations.slice(0, 5000)} // Limit for performance on globe
+            pointsData={filteredStations.slice(0, 10000)} // Increased limit for better coverage
             pointLat="geo_lat"
             pointLng="geo_long"
             pointColor={(d: any) => d.stationuuid === selectedStation?.stationuuid ? '#ff0000' : '#00ff88'}
@@ -272,6 +287,7 @@ const App: React.FC = () => {
             className="w-full h-full"
             ref={mapRef}
             zoomControl={false}
+            preferCanvas={true}
           >
             <TileLayer
               url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -280,7 +296,7 @@ const App: React.FC = () => {
             <TileLayer
               url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
             />
-            {filteredStations.slice(0, 5000).map((station) => (
+            {filteredStations.slice(0, 10000).map((station) => (
               <Marker 
                 key={station.stationuuid} 
                 position={[station.geo_lat!, station.geo_long!]}
@@ -366,11 +382,11 @@ const App: React.FC = () => {
               </button>
             </div>
             <button 
-              onClick={playRandomStation}
-              className="px-4 py-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-medium"
+              onClick={handleDonate}
+              className="px-4 py-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-medium text-green-400"
             >
-              <GlobeIcon className="w-3 h-3 text-green-400" />
-              Random
+              <DollarSign className="w-3 h-3" />
+              Donate
             </button>
           </div>
         </div>
@@ -379,10 +395,11 @@ const App: React.FC = () => {
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div 
-              initial={{ x: -400 }}
-              animate={{ x: 0 }}
-              exit={{ x: -400 }}
-              className="absolute left-6 top-24 bottom-32 w-80 glass-panel rounded-2xl pointer-events-auto flex flex-col overflow-hidden"
+              initial={isMobile ? { y: 400, x: 0 } : { x: -400, y: 0 }}
+              animate={{ x: 0, y: 0 }}
+              exit={isMobile ? { y: 400, x: 0 } : { x: -400, y: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="absolute md:left-6 md:top-24 md:bottom-32 md:w-80 w-full left-0 bottom-0 md:h-auto h-[60vh] glass-panel md:rounded-2xl rounded-t-3xl pointer-events-auto flex flex-col overflow-hidden z-20"
             >
               <div className="flex border-b border-white/10">
                 <button 
@@ -514,9 +531,20 @@ const App: React.FC = () => {
         {/* Sidebar Toggle */}
         <button 
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 p-1 glass-panel rounded-r-lg pointer-events-auto transition-all ${sidebarOpen ? 'ml-[344px]' : 'ml-0'}`}
+          className={`absolute z-30 p-1 glass-panel pointer-events-auto transition-all
+            md:left-0 md:top-1/2 md:-translate-y-1/2 md:rounded-r-lg
+            left-1/2 bottom-0 -translate-x-1/2 rounded-t-lg md:translate-x-0
+            ${sidebarOpen 
+              ? 'md:ml-[344px] md:mb-0 mb-[60vh]' 
+              : 'md:ml-0 mb-0'}`}
         >
-          {sidebarOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+          <div className="md:block hidden">
+            {sidebarOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+          </div>
+          <div className="md:hidden block px-4 py-1">
+            <div className="w-8 h-1 bg-white/20 rounded-full mx-auto mb-1"></div>
+            {sidebarOpen ? <ChevronDown className="w-4 h-4 mx-auto" /> : <ChevronUp className="w-4 h-4 mx-auto" />}
+          </div>
         </button>
 
         {/* Player Bar */}
