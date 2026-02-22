@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import Globe from 'react-globe.gl';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { fetchAllStations, RadioStation, fetchCountries, fetchIPTVStations } from './services/radioService';
 
@@ -262,34 +261,28 @@ const App: React.FC = () => {
             <TileLayer
               url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
             />
-            <MarkerClusterGroup
-              chunkedLoading
-              maxClusterRadius={50}
-              showCoverageOnHover={false}
-            >
-              {filteredStations.slice(0, 10000).map((station) => (
-                <Marker 
-                  key={station.stationuuid} 
-                  position={[station.geo_lat!, station.geo_long!]}
-                  eventHandlers={{
-                    click: () => handleStationClick(station)
-                  }}
-                  icon={L.divIcon({
-                    className: 'custom-div-icon',
-                    html: `<div class="w-3 h-3 rounded-full border border-white/50 ${selectedStation?.stationuuid === station.stationuuid ? 'bg-red-500 animate-pulse scale-150' : 'bg-green-500'}"></div>`,
-                    iconSize: [12, 12],
-                    iconAnchor: [6, 6]
-                  })}
-                >
-                  <Popup className="custom-popup">
-                    <div className="p-1 text-black">
-                      <div className="font-bold text-sm">{station.name}</div>
-                      <div className="text-xs opacity-70">{station.country}</div>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-            </MarkerClusterGroup>
+            {filteredStations.slice(0, 5000).map((station) => (
+              <Marker 
+                key={station.stationuuid} 
+                position={[station.geo_lat!, station.geo_long!]}
+                eventHandlers={{
+                  click: () => handleStationClick(station)
+                }}
+                icon={L.divIcon({
+                  className: 'custom-div-icon',
+                  html: `<div class="w-2 h-2 rounded-full border border-white/30 ${selectedStation?.stationuuid === station.stationuuid ? 'bg-red-500 animate-pulse scale-150' : 'bg-green-500'}"></div>`,
+                  iconSize: [8, 8],
+                  iconAnchor: [4, 4]
+                })}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-1 text-black">
+                    <div className="font-bold text-sm">{station.name}</div>
+                    <div className="text-xs opacity-70">{station.country}</div>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
             <MapController lat={selectedStation?.geo_lat || null} lng={selectedStation?.geo_long || null} />
           </MapContainer>
         )}
