@@ -24,11 +24,10 @@ import {
 import Globe from 'react-globe.gl';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { fetchAllStationsDetailed, RadioStation, fetchCountries } from './services/radioService';
+import { fetchAllStationsDetailed, RadioStation } from './services/radioService';
 
 const App: React.FC = () => {
   const [stations, setStations] = useState<RadioStation[]>([]);
-  const [countries, setCountries] = useState<{ name: string; stationcount: number }[]>([]);
   const [selectedStation, setSelectedStation] = useState<RadioStation | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(0.7);
@@ -40,7 +39,7 @@ const App: React.FC = () => {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
-  const [activeTab, setActiveTab] = useState<'search' | 'countries'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'nearby'>('search');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -59,13 +58,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      const [stationsData, countriesData] = await Promise.all([
-        fetchAllStationsDetailed('votes', true, 0, 5000),
-        fetchCountries()
-      ]);
+      const stationsData = await fetchAllStationsDetailed('votes', true, 0, 5000);
       
       setStations(stationsData);
-      setCountries(countriesData);
       setIsLoading(false);
       
       const savedFavorites = localStorage.getItem('radio-favorites');
@@ -181,6 +176,20 @@ const App: React.FC = () => {
       return matchesSearch && matchesFavorite;
     });
   }, [stations, searchQuery, showOnlyFavorites, favorites]);
+
+  const nearbyStations = useMemo(() => {
+    if (!centerCoords) return [];
+    return [...filteredStations]
+      .filter(s => s.geo_lat !== null && s.geo_long !== null)
+      .map(s => {
+        const dLat = s.geo_lat! - centerCoords.lat;
+        const dLng = s.geo_long! - centerCoords.lng;
+        const distance = Math.sqrt(dLat * dLat + dLng * dLng);
+        return { ...s, distance };
+      })
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 50);
+  }, [filteredStations, centerCoords]);
 
   const MapController = ({ lat, lng, setCenterCoords }: { lat: number | null, lng: number | null, setCenterCoords: (coords: { lat: number, lng: number }) => void }) => {
     const map = useMap();
@@ -409,10 +418,10 @@ const App: React.FC = () => {
                   <Search className="w-3 h-3" /> Search
                 </button>
                 <button 
-                  onClick={() => setActiveTab('countries')}
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeTab === 'countries' ? 'text-green-400 border-b-2 border-green-400' : 'text-white/40 hover:text-white/60'}`}
+                  onClick={() => setActiveTab('nearby')}
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeTab === 'nearby' ? 'text-green-400 border-b-2 border-green-400' : 'text-white/40 hover:text-white/60'}`}
                 >
-                  <List className="w-3 h-3" /> Countries
+                  <MapPin className="w-3 h-3" /> On Map
                 </button>
               </div>
 
@@ -446,7 +455,7 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="p-4 border-b border-white/10">
-                  <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Browse by Country</p>
+                  <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Stations Near Center</p>
                 </div>
               )}
 
@@ -504,22 +513,43 @@ const App: React.FC = () => {
                     ))
                   )
                 ) : (
-                  countries.map((country) => (
+                  nearbyStations.map((station) => (
                     <button
-                      key={country.name}
-                      onClick={() => {
-                        setSearchQuery(country.name);
-                        setActiveTab('search');
-                      }}
-                      className="w-full text-left p-3 rounded-xl hover:bg-white/5 border border-transparent transition-all flex items-center justify-between group"
+                      key={station.stationuuid}
+                      onClick={() => handleStationClick(station)}
+                      className={`w-full text-left p-3 rounded-xl transition-all flex items-center gap-3 group ${
+                        selectedStation?.stationuuid === station.stationuuid 
+                          ? 'bg-green-500/20 border border-green-500/30' 
+                          : 'hover:bg-white/5 border border-transparent'
+                      }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center text-xs font-bold text-white/40 group-hover:text-green-400 transition-colors">
-                          {country.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <span className="text-sm text-white/80 group-hover:text-white">{country.name}</span>
+                      <div className="w-10 h-10 rounded-lg bg-white/5 flex-shrink-0 flex items-center justify-center overflow-hidden border border-white/10">
+                        {station.favicon ? (
+                          <img src={station.favicon} alt="" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                        ) : (
+                          <Radio className="w-5 h-5 text-white/20" />
+                        )}
                       </div>
-                      <span className="text-[10px] bg-white/5 px-2 py-1 rounded text-white/30">{country.stationcount}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium truncate ${selectedStation?.stationuuid === station.stationuuid ? 'text-green-400' : 'text-white/80'}`}>
+                          {station.name}
+                        </div>
+                        <div className="text-xs text-white/40 truncate flex items-center gap-1">
+                          <MapPin className="w-3 h-3" /> {station.country}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {favorites.has(station.stationuuid) && (
+                          <Heart className="w-3 h-3 fill-red-500 text-red-500" />
+                        )}
+                        {selectedStation?.stationuuid === station.stationuuid && isPlaying && (
+                          <div className="flex gap-0.5 items-end h-3">
+                            <div className="w-0.5 bg-green-400 animate-[bounce_1s_infinite]" />
+                            <div className="w-0.5 bg-green-400 animate-[bounce_1.2s_infinite]" />
+                            <div className="w-0.5 bg-green-400 animate-[bounce_0.8s_infinite]" />
+                          </div>
+                        )}
+                      </div>
                     </button>
                   ))
                 )}
