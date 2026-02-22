@@ -39,9 +39,11 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'search' | 'countries'>('search');
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
   const globeRef = useRef<any>();
   const mapRef = useRef<L.Map | null>(null);
   const [centerCoords, setCenterCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [isManualSelection, setIsManualSelection] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -119,6 +121,7 @@ const App: React.FC = () => {
   };
 
   const handleStationClick = (station: RadioStation) => {
+    setIsManualSelection(true);
     setSelectedStation(station);
     setIsPlaying(true);
     setIsAutoRotating(false);
@@ -134,6 +137,9 @@ const App: React.FC = () => {
         mapRef.current.setView([station.geo_lat!, station.geo_long!], 10, { animate: true });
       }
     }
+    
+    // Reset manual selection flag after animation
+    setTimeout(() => setIsManualSelection(false), 1200);
   };
 
   const playRandomStation = () => {
@@ -165,9 +171,30 @@ const App: React.FC = () => {
     });
   }, [stations, searchQuery, showOnlyFavorites, favorites]);
 
+  const MapController = ({ lat, lng, setCenterCoords }: { lat: number | null, lng: number | null, setCenterCoords: (coords: { lat: number, lng: number }) => void }) => {
+    const map = useMap();
+    
+    useEffect(() => {
+      const onMove = () => {
+        const center = map.getCenter();
+        setCenterCoords({ lat: center.lat, lng: center.lng });
+      };
+      
+      map.on('move', onMove);
+      // Initial set
+      onMove();
+      
+      return () => {
+        map.off('move', onMove);
+      };
+    }, [map, setCenterCoords]);
+
+    return null;
+  };
+
   // Effect to find nearest station when center changes
   useEffect(() => {
-    if (viewMode === '2d' && centerCoords && stations.length > 0) {
+    if (viewMode === '2d' && centerCoords && stations.length > 0 && !isManualSelection) {
       // Find nearest station within a certain radius
       let nearest: RadioStation | null = null;
       let minDistance = Infinity;
@@ -186,14 +213,16 @@ const App: React.FC = () => {
         }
       }
       
-      // If within a small threshold (e.g., 0.5 degrees), auto-select
-      // We use a slightly smaller threshold to avoid jitter
+      // If within a small threshold (e.g., 0.25 degrees), auto-select
       if (nearest && minDistance < 0.25 && nearest.stationuuid !== selectedStation?.stationuuid) {
         setSelectedStation(nearest);
+        // We don't force play here if it's just scanning, 
+        // but the user's previous logic had setIsPlaying(true)
+        // Let's keep it but make it feel smoother
         setIsPlaying(true);
       }
     }
-  }, [centerCoords, viewMode, stations, selectedStation?.stationuuid]);
+  }, [centerCoords, viewMode, stations, selectedStation?.stationuuid, isManualSelection]);
 
   return (
     <div className="relative w-full h-screen bg-[#000022] overflow-hidden">
@@ -285,9 +314,19 @@ const App: React.FC = () => {
       {/* Target Circle for 2D Map */}
       {viewMode === '2d' && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-          <div className="w-24 h-24 rounded-full border-2 border-green-500/50 flex items-center justify-center">
+          <div className="relative w-32 h-32 rounded-full border border-green-500/30 flex items-center justify-center">
             <div className="w-1 h-1 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,1)]"></div>
-            <div className="absolute inset-0 rounded-full border border-green-500/20 animate-ping"></div>
+            <div className="absolute inset-0 rounded-full border border-green-500/10 animate-ping"></div>
+            
+            {/* Scanning lines */}
+            <div className="absolute inset-0 rounded-full border-t border-green-500/40 animate-[spin_4s_linear_infinite]"></div>
+            
+            {/* Coordinates display near circle */}
+            {centerCoords && (
+              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-mono text-green-500/60 bg-black/40 px-2 py-0.5 rounded backdrop-blur-sm">
+                {centerCoords.lat.toFixed(4)}°N, {centerCoords.lng.toFixed(4)}°E
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -295,38 +334,42 @@ const App: React.FC = () => {
       {/* Overlay UI */}
       <div className="absolute inset-0 pointer-events-none z-10">
         <div className="p-6 flex justify-between items-start pointer-events-auto">
-          <div className="flex items-center gap-3">
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-3 bg-black/40 backdrop-blur-md p-2 pr-4 rounded-full border border-white/10"
+          >
             <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.5)]">
               <Radio className="text-black w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">RadioJilit</h1>
-              <p className="text-xs text-white/40 uppercase tracking-widest">Live Explorer</p>
+              <h1 className="text-lg font-bold tracking-tight leading-none">RadioJilit</h1>
+              <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">Live Explorer</p>
             </div>
-          </div>
+          </motion.div>
           
           <div className="flex gap-2">
-            <div className="flex glass-panel rounded-full p-1">
+            <div className="flex bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10">
               <button 
                 onClick={() => setViewMode('2d')}
                 className={`p-2 rounded-full transition-all ${viewMode === '2d' ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}
                 title="2D Map"
               >
-                <MapIcon className="w-5 h-5" />
+                <MapIcon className="w-4 h-4" />
               </button>
               <button 
                 onClick={() => setViewMode('3d')}
                 className={`p-2 rounded-full transition-all ${viewMode === '3d' ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}
                 title="3D Globe"
               >
-                <GlobeIcon className="w-5 h-5" />
+                <GlobeIcon className="w-4 h-4" />
               </button>
             </div>
             <button 
               onClick={playRandomStation}
-              className="px-4 py-2 rounded-full glass-panel hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-medium"
+              className="px-4 py-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-medium"
             >
-              <GlobeIcon className="w-4 h-4 text-green-400" />
+              <GlobeIcon className="w-3 h-3 text-green-400" />
               Random
             </button>
           </div>
@@ -477,83 +520,83 @@ const App: React.FC = () => {
         </button>
 
         {/* Player Bar */}
-        <div className="absolute bottom-6 left-6 right-6 pointer-events-auto">
-          <div className="max-w-4xl mx-auto glass-panel rounded-2xl p-4 flex items-center gap-6">
-            <div className="flex items-center gap-4 w-1/3">
-              <div className="w-12 h-12 rounded-xl bg-white/5 flex-shrink-0 flex items-center justify-center border border-white/10 overflow-hidden">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 pointer-events-auto">
+          <motion.div 
+            initial={{ y: 100 }}
+            animate={{ y: 0 }}
+            className="bg-black/60 backdrop-blur-xl rounded-3xl p-3 flex items-center gap-4 border border-white/10 shadow-2xl"
+          >
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-14 h-14 rounded-2xl bg-white/5 flex-shrink-0 flex items-center justify-center border border-white/10 overflow-hidden relative group">
                 {selectedStation?.favicon ? (
                   <img src={selectedStation.favicon} alt="" className="w-full h-full object-cover" />
                 ) : (
                   <Radio className="w-6 h-6 text-white/20" />
                 )}
+                {isPlaying && (
+                  <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                    <div className="flex gap-0.5 items-end h-4">
+                      <div className="w-1 bg-green-400 animate-[bounce_1s_infinite]" />
+                      <div className="w-1 bg-green-400 animate-[bounce_1.2s_infinite]" />
+                      <div className="w-1 bg-green-400 animate-[bounce_0.8s_infinite]" />
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="min-w-0">
-                <h3 className="font-bold truncate text-white/90">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold truncate text-white text-sm">
                   {selectedStation ? selectedStation.name : 'Select a station'}
                 </h3>
-                <p className="text-xs text-white/40 truncate">
+                <p className="text-[10px] text-white/40 truncate uppercase tracking-wider">
                   {selectedStation ? `${selectedStation.state ? selectedStation.state + ', ' : ''}${selectedStation.country}` : 'Explore the globe'}
                 </p>
               </div>
               {selectedStation && (
                 <button 
                   onClick={() => toggleFavorite(selectedStation.stationuuid)}
-                  className={`transition-colors ml-2 ${favorites.has(selectedStation.stationuuid) ? 'text-red-500' : 'text-white/20 hover:text-red-500/50'}`}
+                  className={`transition-colors p-2 rounded-full hover:bg-white/5 ${favorites.has(selectedStation.stationuuid) ? 'text-red-500' : 'text-white/20 hover:text-red-500/50'}`}
                 >
-                  <Heart className={`w-5 h-5 ${favorites.has(selectedStation.stationuuid) ? 'fill-current' : ''}`} />
+                  <Heart className={`w-4 h-4 ${favorites.has(selectedStation.stationuuid) ? 'fill-current' : ''}`} />
                 </button>
               )}
             </div>
 
-            <div className="flex-1 flex flex-col items-center gap-2">
-              <div className="flex items-center gap-6">
-                <button className="text-white/40 hover:text-white transition-colors">
-                  <ChevronLeft className="w-6 h-6" />
-                </button>
-                <button 
-                  onClick={togglePlay}
-                  disabled={!selectedStation}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
-                    selectedStation 
-                      ? 'bg-white text-black hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
-                      : 'bg-white/10 text-white/20 cursor-not-allowed'
-                  }`}
-                >
-                  {isPlaying ? <Pause className="w-7 h-7 fill-current" /> : <Play className="w-7 h-7 fill-current ml-1" />}
-                </button>
-                <button className="text-white/40 hover:text-white transition-colors">
-                  <ChevronRight className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="w-1/3 flex items-center justify-end gap-4">
-              <div className="flex items-center gap-3 group">
-                <button 
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="text-white/40 hover:text-white transition-colors"
-                >
-                  {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                </button>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setVolume(val);
-                    if (audioRef.current) audioRef.current.volume = val;
-                  }}
-                  className="w-24 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white"
-                />
-              </div>
-              <button className="p-2 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors">
-                <Layers className="w-5 h-5" />
+            <div className="flex items-center gap-3 px-2">
+              <button 
+                onClick={togglePlay}
+                disabled={!selectedStation}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                  selectedStation 
+                    ? 'bg-white text-black hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)]' 
+                    : 'bg-white/10 text-white/20 cursor-not-allowed'
+                }`}
+              >
+                {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
               </button>
             </div>
-          </div>
+
+            <div className="flex items-center gap-3 pr-2 border-l border-white/10 pl-4">
+              <button 
+                onClick={() => setIsMuted(!isMuted)}
+                className="text-white/40 hover:text-white transition-colors"
+              >
+                {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.01"
+                value={volume}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setVolume(val);
+                  if (audioRef.current) audioRef.current.volume = val;
+                }}
+                className="w-16 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white"
+              />
+            </div>
+          </motion.div>
         </div>
       </div>
     </div>
