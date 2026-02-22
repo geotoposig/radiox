@@ -298,7 +298,10 @@ const App: React.FC = () => {
             pointLabel={(d: any) => `
               <div class="bg-black/80 p-2 rounded border border-white/20 text-xs">
                 <div class="font-bold text-green-400">${d.name}</div>
-                <div class="text-white/60">${d.country}</div>
+                <div class="text-white/60 flex items-center gap-1.5 mt-1">
+                  <img src="https://flagcdn.com/w20/${d.countrycode.toLowerCase()}.png" class="w-4 h-auto rounded-sm" />
+                  ${d.country}
+                </div>
               </div>
             `}
             enablePointerInteraction={true}
@@ -344,7 +347,14 @@ const App: React.FC = () => {
                 <Popup className="custom-popup">
                   <div className="p-1 text-black">
                     <div className="font-bold text-sm">{station.name}</div>
-                    <div className="text-xs opacity-70">{station.country}</div>
+                    <div className="text-xs opacity-70 flex items-center gap-1.5 mt-0.5">
+                      <img 
+                        src={`https://flagcdn.com/w20/${station.countrycode.toLowerCase()}.png`} 
+                        alt="" 
+                        className="w-4 h-auto rounded-sm shadow-sm"
+                      />
+                      {station.country}
+                    </div>
                   </div>
                 </Popup>
               </Marker>
@@ -520,8 +530,13 @@ const App: React.FC = () => {
                           <div className={`text-sm font-medium truncate ${selectedStation?.stationuuid === station.stationuuid ? 'text-green-400' : 'text-white/80'}`}>
                             {station.name}
                           </div>
-                          <div className="text-xs text-white/40 truncate flex items-center gap-1">
-                            <MapPin className="w-3 h-3" /> {station.country}
+                          <div className="text-xs text-white/40 truncate flex items-center gap-1.5">
+                            <img 
+                              src={`https://flagcdn.com/w20/${station.countrycode.toLowerCase()}.png`} 
+                              alt="" 
+                              className="w-3 h-auto rounded-sm opacity-80"
+                            />
+                            {station.country}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -561,8 +576,13 @@ const App: React.FC = () => {
                         <div className={`text-sm font-medium truncate ${selectedStation?.stationuuid === station.stationuuid ? 'text-green-400' : 'text-white/80'}`}>
                           {station.name}
                         </div>
-                        <div className="text-xs text-white/40 truncate flex items-center gap-1">
-                          <MapPin className="w-3 h-3" /> {station.country}
+                        <div className="text-xs text-white/40 truncate flex items-center gap-1.5">
+                          <img 
+                            src={`https://flagcdn.com/w20/${station.countrycode.toLowerCase()}.png`} 
+                            alt="" 
+                            className="w-3 h-auto rounded-sm opacity-80"
+                          />
+                          {station.country}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -632,7 +652,14 @@ const App: React.FC = () => {
                 <h3 className="font-bold truncate text-white text-sm">
                   {selectedStation ? selectedStation.name : 'Select a station'}
                 </h3>
-                <p className="text-[10px] text-white/40 truncate uppercase tracking-wider">
+                <p className="text-[10px] text-white/40 truncate uppercase tracking-wider flex items-center gap-1.5">
+                  {selectedStation && (
+                    <img 
+                      src={`https://flagcdn.com/w20/${selectedStation.countrycode.toLowerCase()}.png`} 
+                      alt="" 
+                      className="w-3 h-auto rounded-sm opacity-60"
+                    />
+                  )}
                   {selectedStation ? `${selectedStation.state ? selectedStation.state + ', ' : ''}${selectedStation.country}` : 'Explore the globe'}
                 </p>
               </div>
