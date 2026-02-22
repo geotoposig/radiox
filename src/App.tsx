@@ -42,6 +42,7 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const globeRef = useRef<any>();
   const mapRef = useRef<L.Map | null>(null);
+  const [centerCoords, setCenterCoords] = useState<{ lat: number, lng: number } | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -151,13 +152,59 @@ const App: React.FC = () => {
 
   const MapController = ({ lat, lng }: { lat: number | null, lng: number | null }) => {
     const map = useMap();
+    
     useEffect(() => {
       if (lat !== null && lng !== null) {
         map.setView([lat, lng], map.getZoom());
       }
     }, [lat, lng]);
+
+    useEffect(() => {
+      const onMove = () => {
+        const center = map.getCenter();
+        setCenterCoords({ lat: center.lat, lng: center.lng });
+      };
+      
+      map.on('move', onMove);
+      // Initial set
+      onMove();
+      
+      return () => {
+        map.off('move', onMove);
+      };
+    }, [map]);
+
     return null;
   };
+
+  // Effect to find nearest station when center changes
+  useEffect(() => {
+    if (viewMode === '2d' && centerCoords && stations.length > 0) {
+      // Find nearest station within a certain radius
+      let nearest: RadioStation | null = null;
+      let minDistance = Infinity;
+      
+      // Only check stations with coordinates
+      const geoStations = stations.filter(s => s.geo_lat !== null && s.geo_long !== null);
+      
+      for (const station of geoStations) {
+        const dLat = station.geo_lat! - centerCoords.lat;
+        const dLng = station.geo_long! - centerCoords.lng;
+        const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+        
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearest = station;
+        }
+      }
+      
+      // If within a small threshold (e.g., 0.5 degrees), auto-select
+      if (nearest && minDistance < 0.3 && nearest.stationuuid !== selectedStation?.stationuuid) {
+        setSelectedStation(nearest);
+        setIsPlaying(true);
+      }
+    }
+  }, [centerCoords, viewMode, stations]);
 
   return (
     <div className="relative w-full h-screen bg-[#000022] overflow-hidden">
@@ -247,6 +294,16 @@ const App: React.FC = () => {
           </MapContainer>
         )}
       </div>
+
+      {/* Target Circle for 2D Map */}
+      {viewMode === '2d' && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
+          <div className="w-24 h-24 rounded-full border-2 border-green-500/50 flex items-center justify-center">
+            <div className="w-1 h-1 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,1)]"></div>
+            <div className="absolute inset-0 rounded-full border border-green-500/20 animate-ping"></div>
+          </div>
+        </div>
+      )}
 
       {/* Overlay UI */}
       <div className="absolute inset-0 pointer-events-none z-10">
