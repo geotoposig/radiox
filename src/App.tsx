@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const mapRef = useRef<L.Map | null>(null);
   const [centerCoords, setCenterCoords] = useState<{ lat: number, lng: number } | null>(null);
   const [isManualSelection, setIsManualSelection] = useState(false);
+  const [isMovingMap, setIsMovingMap] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -169,13 +170,26 @@ const App: React.FC = () => {
   };
 
   const filteredStations = useMemo(() => {
-    return stations.filter(s => {
+    const filtered = stations.filter(s => {
       const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.country.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesFavorite = !showOnlyFavorites || favorites.has(s.stationuuid);
       return matchesSearch && matchesFavorite;
     });
-  }, [stations, searchQuery, showOnlyFavorites, favorites]);
+
+    if (centerCoords) {
+      return filtered
+        .map(s => {
+          if (s.geo_lat === null || s.geo_long === null) return { ...s, distance: Infinity };
+          const dLat = s.geo_lat - centerCoords.lat;
+          const dLng = s.geo_long - centerCoords.lng;
+          return { ...s, distance: Math.sqrt(dLat * dLat + dLng * dLng) };
+        })
+        .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+    }
+
+    return filtered;
+  }, [stations, searchQuery, showOnlyFavorites, favorites, centerCoords]);
 
   const nearbyStations = useMemo(() => {
     if (!centerCoords) return [];
@@ -199,13 +213,21 @@ const App: React.FC = () => {
         const center = map.getCenter();
         setCenterCoords({ lat: center.lat, lng: center.lng });
       };
+
+      const onMoveStart = () => setIsMovingMap(true);
+      const onMoveEnd = () => setIsMovingMap(false);
       
       map.on('move', onMove);
+      map.on('movestart', onMoveStart);
+      map.on('moveend', onMoveEnd);
+      
       // Initial set
       onMove();
       
       return () => {
         map.off('move', onMove);
+        map.off('movestart', onMoveStart);
+        map.off('moveend', onMoveEnd);
       };
     }, [map, setCenterCoords]);
 
@@ -405,10 +427,15 @@ const App: React.FC = () => {
           {sidebarOpen && (
             <motion.div 
               initial={isMobile ? { y: 400, x: 0 } : { x: -400, y: 0 }}
-              animate={{ x: 0, y: 0 }}
+              animate={{ 
+                x: 0, 
+                y: 0,
+                opacity: isMovingMap ? 0.4 : 1,
+                scale: isMovingMap ? 0.98 : 1
+              }}
               exit={isMobile ? { y: 400, x: 0 } : { x: -400, y: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute md:left-6 md:top-24 md:bottom-32 md:w-80 w-full left-0 bottom-0 md:h-auto h-[60vh] glass-panel md:rounded-2xl rounded-t-3xl pointer-events-auto flex flex-col overflow-hidden z-20"
+              className="absolute md:left-6 md:top-24 md:bottom-32 md:w-80 w-full left-0 bottom-0 md:h-auto h-[60vh] glass-panel md:rounded-2xl rounded-t-3xl pointer-events-auto flex flex-col overflow-hidden z-20 transition-opacity duration-300"
             >
               <div className="flex border-b border-white/10">
                 <button 
