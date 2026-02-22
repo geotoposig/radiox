@@ -20,7 +20,7 @@ import {
 import Globe from 'react-globe.gl';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { fetchAllStations, RadioStation, fetchCountries, fetchIPTVStations } from './services/radioService';
+import { fetchAllStationsDetailed, RadioStation, fetchCountries } from './services/radioService';
 
 const App: React.FC = () => {
   const [stations, setStations] = useState<RadioStation[]>([]);
@@ -46,15 +46,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      const [stationsData, countriesData, iptvData] = await Promise.all([
-        fetchAllStations(),
-        fetchCountries(),
-        fetchIPTVStations()
+      const [stationsData, countriesData] = await Promise.all([
+        fetchAllStationsDetailed('votes', true, 0, 5000),
+        fetchCountries()
       ]);
       
-      // Merge IPTV stations. Note: IPTV stations might not have coordinates, 
-      // so they will only appear in the search/list, not on the map.
-      setStations([...stationsData, ...iptvData]);
+      setStations(stationsData);
       setCountries(countriesData);
       setIsLoading(false);
       
@@ -79,27 +76,46 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (selectedStation && audioRef.current) {
-      audioRef.current.src = selectedStation.url_resolved || selectedStation.url;
-      if (isPlaying) {
-        audioRef.current.play().catch(e => {
-          console.error("Playback failed", e);
-          setIsPlaying(false);
-        });
+      const newUrl = selectedStation.url_resolved || selectedStation.url;
+      
+      // Only update src if it's actually different
+      if (audioRef.current.src !== newUrl) {
+        audioRef.current.src = newUrl;
+        
+        if (isPlaying) {
+          // Cancel any existing play promise if possible (though HTML5 audio doesn't support aborting)
+          // We just handle the promise to avoid the "interrupted" error
+          const playPromise = audioRef.current.play();
+          playPromiseRef.current = playPromise;
+          
+          playPromise.catch(e => {
+            if (e.name !== 'AbortError') {
+              console.error("Playback failed", e);
+              setIsPlaying(false);
+            }
+          });
+        }
       }
     }
-  }, [selectedStation]);
+  }, [selectedStation, isPlaying]);
 
   const togglePlay = () => {
-    if (!selectedStation) return;
+    if (!selectedStation || !audioRef.current) return;
+    
     if (isPlaying) {
-      audioRef.current?.pause();
+      audioRef.current.pause();
+      setIsPlaying(false);
     } else {
-      audioRef.current?.play().catch(e => {
+      const playPromise = audioRef.current.play();
+      playPromiseRef.current = playPromise;
+      
+      playPromise.then(() => {
+        setIsPlaying(true);
+      }).catch(e => {
         console.error("Playback failed", e);
         setIsPlaying(false);
       });
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleStationClick = (station: RadioStation) => {
@@ -149,33 +165,6 @@ const App: React.FC = () => {
     });
   }, [stations, searchQuery, showOnlyFavorites, favorites]);
 
-  const MapController = ({ lat, lng }: { lat: number | null, lng: number | null }) => {
-    const map = useMap();
-    
-    useEffect(() => {
-      if (lat !== null && lng !== null) {
-        map.setView([lat, lng], map.getZoom());
-      }
-    }, [lat, lng]);
-
-    useEffect(() => {
-      const onMove = () => {
-        const center = map.getCenter();
-        setCenterCoords({ lat: center.lat, lng: center.lng });
-      };
-      
-      map.on('move', onMove);
-      // Initial set
-      onMove();
-      
-      return () => {
-        map.off('move', onMove);
-      };
-    }, [map]);
-
-    return null;
-  };
-
   // Effect to find nearest station when center changes
   useEffect(() => {
     if (viewMode === '2d' && centerCoords && stations.length > 0) {
@@ -198,12 +187,13 @@ const App: React.FC = () => {
       }
       
       // If within a small threshold (e.g., 0.5 degrees), auto-select
-      if (nearest && minDistance < 0.3 && nearest.stationuuid !== selectedStation?.stationuuid) {
+      // We use a slightly smaller threshold to avoid jitter
+      if (nearest && minDistance < 0.25 && nearest.stationuuid !== selectedStation?.stationuuid) {
         setSelectedStation(nearest);
         setIsPlaying(true);
       }
     }
-  }, [centerCoords, viewMode, stations]);
+  }, [centerCoords, viewMode, stations, selectedStation?.stationuuid]);
 
   return (
     <div className="relative w-full h-screen bg-[#000022] overflow-hidden">
@@ -283,7 +273,11 @@ const App: React.FC = () => {
                 </Popup>
               </Marker>
             ))}
-            <MapController lat={selectedStation?.geo_lat || null} lng={selectedStation?.geo_long || null} />
+            <MapController 
+              lat={selectedStation?.geo_lat || null} 
+              lng={selectedStation?.geo_long || null} 
+              setCenterCoords={setCenterCoords}
+            />
           </MapContainer>
         )}
       </div>
@@ -306,7 +300,7 @@ const App: React.FC = () => {
               <Radio className="text-black w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">Global Radio</h1>
+              <h1 className="text-xl font-bold tracking-tight">RadioJilit</h1>
               <p className="text-xs text-white/40 uppercase tracking-widest">Live Explorer</p>
             </div>
           </div>
@@ -401,8 +395,8 @@ const App: React.FC = () => {
                   <div className="flex flex-col items-center justify-center h-full text-white/40 text-sm gap-4 p-6 text-center">
                     <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
                     <div>
-                      <p className="font-medium text-white/60">Loading Global Stations</p>
-                      <p className="text-xs mt-1">Fetching over 40,000 live streams...</p>
+                      <p className="font-medium text-white/60">Loading RadioJilit</p>
+                      <p className="text-xs mt-1">Fetching live streams worldwide...</p>
                     </div>
                   </div>
                 ) : activeTab === 'search' ? (
